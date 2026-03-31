@@ -7,6 +7,14 @@ type BulkResult = {
   comment: string;
 };
 
+type StudentRow = {
+  name: string;
+  subject: string;
+  unit: string;
+  understanding: string;
+  attitude: string;
+};
+
 export default function Page() {
   const [subject, setSubject] = useState("");
   const [unit, setUnit] = useState("");
@@ -17,6 +25,9 @@ export default function Page() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const [bulkText, setBulkText] = useState(
+    "name,subject,unit,understanding,attitude\n山田太郎,英語,関係代名詞,やや苦戦,集中して取り組んでいた"
+  );
   const [bulkResults, setBulkResults] = useState<BulkResult[]>([]);
   const [bulkError, setBulkError] = useState("");
   const [bulkLoading, setBulkLoading] = useState(false);
@@ -79,73 +90,62 @@ export default function Page() {
     }, 1500);
   };
 
-  const handleCSVUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const parseBulkText = (text: string): StudentRow[] => {
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line !== "");
 
-    const fileName = file.name.toLowerCase();
-    if (!fileName.endsWith(".csv") && !fileName.endsWith(".txt")) {
-      setBulkError("CSVかTXTファイルを選んで");
-      setBulkResults([]);
-      e.target.value = "";
-      return;
+    if (lines.length < 2) {
+      throw new Error("CSVテキストにデータが入ってない");
     }
 
+    const header = lines[0].split(",").map((item) => item.trim());
+    const expectedHeader = [
+      "name",
+      "subject",
+      "unit",
+      "understanding",
+      "attitude",
+    ];
+
+    const isValidHeader =
+      header.length === expectedHeader.length &&
+      header.every((item, index) => item === expectedHeader[index]);
+
+    if (!isValidHeader) {
+      throw new Error(
+        "1行目は name,subject,unit,understanding,attitude にして"
+      );
+    }
+
+    return lines.slice(1).map((line, index) => {
+      const cols = line.split(",").map((item) => item.trim());
+
+      if (cols.length < 5) {
+        throw new Error(`${index + 2}行目の列数が足りない`);
+      }
+
+      const [name, subject, unit, understanding, attitude] = cols;
+
+      return {
+        name,
+        subject,
+        unit,
+        understanding,
+        attitude,
+      };
+    });
+  };
+
+  const handleBulkGenerate = async () => {
     setBulkLoading(true);
     setBulkError("");
     setBulkResults([]);
     setCopiedBulkIndex(null);
 
     try {
-      const text = await file.text();
-
-      const lines = text
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line !== "");
-
-      if (lines.length < 2) {
-        throw new Error("CSVにデータが入ってない");
-      }
-
-      const header = lines[0].split(",").map((item) => item.trim());
-      const expectedHeader = [
-        "name",
-        "subject",
-        "unit",
-        "understanding",
-        "attitude",
-      ];
-
-      const isValidHeader =
-        header.length === expectedHeader.length &&
-        header.every((item, index) => item === expectedHeader[index]);
-
-      if (!isValidHeader) {
-        throw new Error(
-          "CSVの1行目は name,subject,unit,understanding,attitude にして"
-        );
-      }
-
-      const students = lines.slice(1).map((line, index) => {
-        const cols = line.split(",").map((item) => item.trim());
-
-        if (cols.length < 5) {
-          throw new Error(`${index + 2}行目の列数が足りない`);
-        }
-
-        const [name, subject, unit, understanding, attitude] = cols;
-
-        return {
-          name,
-          subject,
-          unit,
-          understanding,
-          attitude,
-        };
-      });
+      const students = parseBulkText(bulkText);
 
       const res = await fetch("/api/bulk", {
         method: "POST",
@@ -158,7 +158,7 @@ export default function Page() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "CSV一括生成に失敗した");
+        throw new Error(data.error || "一括生成に失敗した");
       }
 
       setBulkResults(data.results || []);
@@ -166,11 +166,10 @@ export default function Page() {
       if (err instanceof Error) {
         setBulkError(err.message);
       } else {
-        setBulkError("CSV処理で不明なエラーが起きた");
+        setBulkError("一括処理で不明なエラーが起きた");
       }
     } finally {
       setBulkLoading(false);
-      e.target.value = "";
     }
   };
 
@@ -180,7 +179,7 @@ export default function Page() {
         <div style={styles.headerBox}>
           <h1 style={styles.title}>コミルコメント生成</h1>
           <p style={styles.subtitle}>
-            手入力でもCSVでも、コミルに貼れるコメントを生成する
+            手入力でも、CSVテキスト貼り付けでも、コミルに貼れるコメントを生成する
           </p>
         </div>
 
@@ -274,24 +273,38 @@ export default function Page() {
         </div>
 
         <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>CSVで複数人まとめて生成</h2>
+          <h2 style={styles.sectionTitle}>CSVテキストを貼り付けて一括生成</h2>
 
           <p style={styles.helpText}>
-            CSVの1行目は
+            1行目は
             <code style={styles.code}>
               name,subject,unit,understanding,attitude
             </code>
             にする
           </p>
 
-          <input
-            type="file"
-            onChange={handleCSVUpload}
-            style={styles.fileInput}
+          <textarea
+            style={styles.bulkTextarea}
+            value={bulkText}
+            onChange={(e) => setBulkText(e.target.value)}
+            placeholder={
+              "name,subject,unit,understanding,attitude\n山田太郎,英語,関係代名詞,やや苦戦,集中して取り組んでいた"
+            }
           />
 
+          <button
+            style={{
+              ...styles.button,
+              ...(bulkLoading || !bulkText.trim() ? styles.buttonDisabled : {}),
+            }}
+            onClick={handleBulkGenerate}
+            disabled={bulkLoading || !bulkText.trim()}
+          >
+            {bulkLoading ? "一括生成中..." : "一括でコメント生成"}
+          </button>
+
           {bulkLoading && (
-            <p style={styles.loadingText}>CSVのコメントをまとめて生成中...</p>
+            <p style={styles.loadingText}>CSVテキストからまとめて生成中...</p>
           )}
 
           {bulkError && <div style={styles.errorBox}>{bulkError}</div>}
@@ -409,6 +422,20 @@ const styles: { [key: string]: React.CSSProperties } = {
     boxSizing: "border-box",
     fontFamily: "inherit",
   },
+  bulkTextarea: {
+    width: "100%",
+    minHeight: "180px",
+    borderRadius: "12px",
+    border: "1px solid #cfd7e6",
+    padding: "14px",
+    fontSize: "15px",
+    outline: "none",
+    resize: "vertical",
+    backgroundColor: "#fbfcff",
+    boxSizing: "border-box",
+    fontFamily: "monospace",
+    lineHeight: 1.7,
+  },
   button: {
     marginTop: "20px",
     width: "100%",
@@ -502,10 +529,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     backgroundColor: "#eef2ff",
     borderRadius: "6px",
     fontSize: "13px",
-  },
-  fileInput: {
-    marginTop: "8px",
-    marginBottom: "12px",
   },
   bulkList: {
     display: "grid",
