@@ -1,12 +1,20 @@
 import OpenAI from "openai";
 
+type Student = {
+  name: string;
+  subject: string;
+  unit: string;
+  understanding: string;
+  attitude: string;
+};
+
 export async function POST(req: Request) {
   try {
-    const { subject, unit, understanding, attitude } = await req.json();
+    const { students } = await req.json();
 
-    if (!subject || !unit) {
+    if (!students || !Array.isArray(students) || students.length === 0) {
       return Response.json(
-        { error: "科目と単元は必須" },
+        { error: "students が空" },
         { status: 400 }
       );
     }
@@ -15,7 +23,10 @@ export async function POST(req: Request) {
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    const prompt = `
+    const results = [];
+
+    for (const student of students as Student[]) {
+      const prompt = `
 あなたは学習塾の先生のコメント作成アシスタントです。
 以下の情報をもとに、保護者・生徒向けの自然なコメントを日本語で1つ作成してください。
 
@@ -28,22 +39,27 @@ export async function POST(req: Request) {
 - 褒めすぎない
 
 入力:
-科目名: ${subject}
-単元名: ${unit}
-理解度: ${understanding || "普通"}
-授業の様子: ${attitude || "特になし"}
+生徒名: ${student.name}
+科目名: ${student.subject}
+単元名: ${student.unit}
+理解度: ${student.understanding || "普通"}
+授業の様子: ${student.attitude || "特になし"}
 `;
 
-    const response = await client.responses.create({
-      model: "gpt-5",
-      input: prompt,
-    });
+      const response = await client.responses.create({
+        model: "gpt-5",
+        input: prompt,
+      });
 
-    return Response.json({
-      comment: response.output_text,
-    });
+      results.push({
+        name: student.name,
+        comment: response.output_text,
+      });
+    }
+
+    return Response.json({ results });
   } catch (error) {
-    console.error("single comment error:", error);
+    console.error("bulk comment error:", error);
 
     if (error instanceof Error) {
       return Response.json(
@@ -53,7 +69,7 @@ export async function POST(req: Request) {
     }
 
     return Response.json(
-      { error: "生成失敗" },
+      { error: "一括生成失敗" },
       { status: 500 }
     );
   }

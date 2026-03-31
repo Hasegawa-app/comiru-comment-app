@@ -2,6 +2,11 @@
 
 import { useState } from "react";
 
+type BulkResult = {
+  name: string;
+  comment: string;
+};
+
 export default function Page() {
   const [subject, setSubject] = useState("");
   const [unit, setUnit] = useState("");
@@ -11,6 +16,10 @@ export default function Page() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  const [bulkResults, setBulkResults] = useState<BulkResult[]>([]);
+  const [bulkError, setBulkError] = useState("");
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -57,17 +66,109 @@ export default function Page() {
     setTimeout(() => setCopied(false), 1500);
   };
 
+  const handleBulkCopy = async (text: string) => {
+    await navigator.clipboard.writeText(text);
+  };
+
+  const handleCSVUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setBulkLoading(true);
+    setBulkError("");
+    setBulkResults([]);
+
+    try {
+      const text = await file.text();
+
+      const lines = text
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line !== "");
+
+      if (lines.length < 2) {
+        throw new Error("CSVにデータが入ってない");
+      }
+
+      const header = lines[0].split(",").map((item) => item.trim());
+      const expectedHeader = [
+        "name",
+        "subject",
+        "unit",
+        "understanding",
+        "attitude",
+      ];
+
+      const isValidHeader =
+        header.length === expectedHeader.length &&
+        header.every((item, index) => item === expectedHeader[index]);
+
+      if (!isValidHeader) {
+        throw new Error(
+          "CSVの1行目は name,subject,unit,understanding,attitude にして"
+        );
+      }
+
+      const students = lines.slice(1).map((line, index) => {
+        const cols = line.split(",").map((item) => item.trim());
+
+        if (cols.length < 5) {
+          throw new Error(`${index + 2}行目の列数が足りない`);
+        }
+
+        const [name, subject, unit, understanding, attitude] = cols;
+
+        return {
+          name,
+          subject,
+          unit,
+          understanding,
+          attitude,
+        };
+      });
+
+      const res = await fetch("/api/bulk", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ students }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "CSV一括生成に失敗した");
+      }
+
+      setBulkResults(data.results || []);
+    } catch (err) {
+      if (err instanceof Error) {
+        setBulkError(err.message);
+      } else {
+        setBulkError("CSV処理で不明なエラーが起きた");
+      }
+    } finally {
+      setBulkLoading(false);
+      e.target.value = "";
+    }
+  };
+
   return (
     <main style={styles.page}>
       <div style={styles.container}>
         <div style={styles.headerBox}>
           <h1 style={styles.title}>コミルコメント生成</h1>
           <p style={styles.subtitle}>
-            授業内容を入れると、コミルに貼れるコメントを生成する
+            手入力でもCSVでも、コミルに貼れるコメントを生成する
           </p>
         </div>
 
         <div style={styles.card}>
+          <h2 style={styles.sectionTitle}>1人分を手入力で生成</h2>
+
           <div style={styles.formGrid}>
             <div style={styles.field}>
               <label style={styles.label}>科目</label>
@@ -109,7 +210,7 @@ export default function Page() {
                 style={styles.textarea}
                 value={attitude}
                 onChange={(e) => setAttitude(e.target.value)}
-                placeholder="例：問題演習に集中して取り組めていた。計算ミスが少し見られた。"
+                placeholder="例：集中して取り組めていた。計算ミスが少し見られた。"
               />
             </div>
           </div>
@@ -126,31 +227,74 @@ export default function Page() {
           </button>
 
           {loading && <p style={styles.loadingText}>AIがコメントを作成中...</p>}
-
           {error && <div style={styles.errorBox}>{error}</div>}
+
+          <div style={styles.resultCard}>
+            <div style={styles.resultHeader}>
+              <h3 style={styles.resultTitle}>生成結果</h3>
+              <button
+                style={{
+                  ...styles.copyButton,
+                  ...(!result ? styles.copyButtonDisabled : {}),
+                }}
+                onClick={handleCopy}
+                disabled={!result}
+              >
+                {copied ? "コピー済み" : "コピー"}
+              </button>
+            </div>
+
+            {result ? (
+              <p style={styles.resultText}>{result}</p>
+            ) : (
+              <p style={styles.placeholderText}>
+                ここに生成されたコメントが表示される
+              </p>
+            )}
+          </div>
         </div>
 
-        <div style={styles.resultCard}>
-          <div style={styles.resultHeader}>
-            <h2 style={styles.resultTitle}>生成結果</h2>
-            <button
-              style={{
-                ...styles.copyButton,
-                ...(!result ? styles.copyButtonDisabled : {}),
-              }}
-              onClick={handleCopy}
-              disabled={!result}
-            >
-              {copied ? "コピー済み" : "コピー"}
-            </button>
-          </div>
+        <div style={styles.card}>
+          <h2 style={styles.sectionTitle}>CSVで複数人まとめて生成</h2>
 
-          {result ? (
-            <p style={styles.resultText}>{result}</p>
-          ) : (
-            <p style={styles.placeholderText}>
-              ここに生成されたコメントが表示される
-            </p>
+          <p style={styles.helpText}>
+            CSVの1行目は
+            <code style={styles.code}>
+              name,subject,unit,understanding,attitude
+            </code>
+            にする
+          </p>
+
+          <input
+            type="file"
+            accept=".csv"
+            onChange={handleCSVUpload}
+            style={styles.fileInput}
+          />
+
+          {bulkLoading && (
+            <p style={styles.loadingText}>CSVのコメントをまとめて生成中...</p>
+          )}
+
+          {bulkError && <div style={styles.errorBox}>{bulkError}</div>}
+
+          {bulkResults.length > 0 && (
+            <div style={styles.bulkList}>
+              {bulkResults.map((item, index) => (
+                <div key={index} style={styles.bulkCard}>
+                  <div style={styles.bulkHeader}>
+                    <h3 style={styles.bulkName}>{item.name}</h3>
+                    <button
+                      style={styles.copyButton}
+                      onClick={() => handleBulkCopy(item.comment)}
+                    >
+                      コピー
+                    </button>
+                  </div>
+                  <p style={styles.resultText}>{item.comment}</p>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>
@@ -167,7 +311,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     boxSizing: "border-box",
   },
   container: {
-    maxWidth: "880px",
+    maxWidth: "960px",
     margin: "0 auto",
   },
   headerBox: {
@@ -184,6 +328,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginBottom: 0,
     color: "#5f6b85",
     fontSize: "15px",
+  },
+  sectionTitle: {
+    marginTop: 0,
+    marginBottom: "16px",
+    fontSize: "22px",
+    fontWeight: 800,
+    color: "#1f2a44",
   },
   card: {
     backgroundColor: "#ffffff",
@@ -246,7 +397,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: "16px",
     fontWeight: 700,
     cursor: "pointer",
-    transition: "0.2s",
   },
   buttonDisabled: {
     backgroundColor: "#9dbcf5",
@@ -267,11 +417,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: "14px",
   },
   resultCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: "18px",
-    padding: "24px",
-    boxShadow: "0 10px 30px rgba(31, 42, 68, 0.08)",
-    border: "1px solid #e7ebf3",
+    marginTop: "20px",
+    backgroundColor: "#f8fbff",
+    borderRadius: "16px",
+    padding: "20px",
+    border: "1px solid #e2e8f0",
   },
   resultHeader: {
     display: "flex",
@@ -282,7 +432,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   resultTitle: {
     margin: 0,
-    fontSize: "22px",
+    fontSize: "20px",
     fontWeight: 800,
     color: "#1f2a44",
   },
@@ -311,5 +461,46 @@ const styles: { [key: string]: React.CSSProperties } = {
     margin: 0,
     color: "#8a94a6",
     fontSize: "15px",
+  },
+  helpText: {
+    marginTop: 0,
+    color: "#5f6b85",
+    fontSize: "14px",
+  },
+  code: {
+    marginLeft: "6px",
+    marginRight: "6px",
+    padding: "2px 6px",
+    backgroundColor: "#eef2ff",
+    borderRadius: "6px",
+    fontSize: "13px",
+  },
+  fileInput: {
+    marginTop: "8px",
+    marginBottom: "12px",
+  },
+  bulkList: {
+    display: "grid",
+    gap: "16px",
+    marginTop: "16px",
+  },
+  bulkCard: {
+    backgroundColor: "#f8fbff",
+    borderRadius: "16px",
+    padding: "18px",
+    border: "1px solid #e2e8f0",
+  },
+  bulkHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "12px",
+    marginBottom: "10px",
+  },
+  bulkName: {
+    margin: 0,
+    fontSize: "18px",
+    fontWeight: 800,
+    color: "#1f2a44",
   },
 };
