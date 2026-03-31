@@ -20,6 +20,7 @@ export default function Page() {
   const [bulkResults, setBulkResults] = useState<BulkResult[]>([]);
   const [bulkError, setBulkError] = useState("");
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [copiedBulkIndex, setCopiedBulkIndex] = useState<number | null>(null);
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -63,11 +64,19 @@ export default function Page() {
     if (!result) return;
     await navigator.clipboard.writeText(result);
     setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+
+    setTimeout(() => {
+      setCopied(false);
+    }, 1500);
   };
 
-  const handleBulkCopy = async (text: string) => {
+  const handleBulkCopy = async (text: string, index: number) => {
     await navigator.clipboard.writeText(text);
+    setCopiedBulkIndex(index);
+
+    setTimeout(() => {
+      setCopiedBulkIndex(null);
+    }, 1500);
   };
 
   const handleCSVUpload = async (
@@ -79,6 +88,7 @@ export default function Page() {
     setBulkLoading(true);
     setBulkError("");
     setBulkResults([]);
+    setCopiedBulkIndex(null);
 
     try {
       const text = await file.text();
@@ -236,6 +246,7 @@ export default function Page() {
                 style={{
                   ...styles.copyButton,
                   ...(!result ? styles.copyButtonDisabled : {}),
+                  ...(copied ? styles.copiedButton : {}),
                 }}
                 onClick={handleCopy}
                 disabled={!result}
@@ -285,10 +296,15 @@ export default function Page() {
                   <div style={styles.bulkHeader}>
                     <h3 style={styles.bulkName}>{item.name}</h3>
                     <button
-                      style={styles.copyButton}
-                      onClick={() => handleBulkCopy(item.comment)}
+                      style={{
+                        ...styles.copyButton,
+                        ...(copiedBulkIndex === index
+                          ? styles.copiedButton
+                          : {}),
+                      }}
+                      onClick={() => handleBulkCopy(item.comment, index)}
                     >
-                      コピー
+                      {copiedBulkIndex === index ? "コピー済み" : "コピー"}
                     </button>
                   </div>
                   <p style={styles.resultText}>{item.comment}</p>
@@ -449,6 +465,11 @@ const styles: { [key: string]: React.CSSProperties } = {
   copyButtonDisabled: {
     opacity: 0.5,
     cursor: "not-allowed",
+  },
+  copiedButton: {
+    backgroundColor: "#dbeafe",
+    border: "1px solid #93c5fd",
+    color: "#1d4ed8",
   },
   resultText: {
     margin: 0,

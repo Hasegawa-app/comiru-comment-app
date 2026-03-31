@@ -37,6 +37,8 @@ export async function POST(req: Request) {
 - 前向きな一言で締める
 - 丁寧で自然
 - 褒めすぎない
+- 体言止めを絶対に用いない
+- 生徒名はコメント内に含めない
 
 入力:
 生徒名: ${student.name}
