@@ -34,7 +34,15 @@ export async function POST(req: Request) {
       comment: response.output_text,
     });
   } catch (error) {
-    console.error(error);
+    console.error("OpenAI error:", error);
+
+    if (error instanceof Error) {
+      return Response.json(
+        { error: `OpenAIエラー: ${error.message}` },
+        { status: 500 }
+      );
+    }
+
     return Response.json(
       { error: "生成失敗" },
       { status: 500 }
