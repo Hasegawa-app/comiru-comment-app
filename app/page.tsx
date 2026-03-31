@@ -85,6 +85,14 @@ export default function Page() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const fileName = file.name.toLowerCase();
+    if (!fileName.endsWith(".csv") && !fileName.endsWith(".txt")) {
+      setBulkError("CSVかTXTファイルを選んで");
+      setBulkResults([]);
+      e.target.value = "";
+      return;
+    }
+
     setBulkLoading(true);
     setBulkError("");
     setBulkResults([]);
@@ -278,7 +286,6 @@ export default function Page() {
 
           <input
             type="file"
-            accept=".csv"
             onChange={handleCSVUpload}
             style={styles.fileInput}
           />
