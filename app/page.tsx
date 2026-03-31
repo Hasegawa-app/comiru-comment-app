@@ -15,6 +15,60 @@ type StudentRow = {
   attitude: string;
 };
 
+type CommentCache = Record<string, string>;
+
+const CACHE_KEY = "comiru_comment_cache_v1";
+
+function normalizeValue(value: string) {
+  return value.trim();
+}
+
+function makeSingleCacheKey(
+  subject: string,
+  unit: string,
+  understanding: string,
+  attitude: string
+) {
+  return [
+    normalizeValue(subject),
+    normalizeValue(unit),
+    normalizeValue(understanding),
+    normalizeValue(attitude),
+  ].join("||");
+}
+
+function makeBulkCacheKey(student: StudentRow) {
+  return [
+    normalizeValue(student.name),
+    normalizeValue(student.subject),
+    normalizeValue(student.unit),
+    normalizeValue(student.understanding),
+    normalizeValue(student.attitude),
+  ].join("||");
+}
+
+function loadCache(): CommentCache {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as CommentCache;
+  } catch {
+    return {};
+  }
+}
+
+function saveCache(cache: CommentCache) {
+  if (typeof window === "undefined") return;
+
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // 保存失敗時は無視
+  }
+}
+
 export default function Page() {
   const [subject, setSubject] = useState("");
   const [unit, setUnit] = useState("");
@@ -24,6 +78,7 @@ export default function Page() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [usedSingleCache, setUsedSingleCache] = useState(false);
 
   const [bulkText, setBulkText] = useState(
     "name,subject,unit,understanding,attitude\n山田太郎,英語,関係代名詞,やや苦戦,集中して取り組んでいた"
@@ -32,14 +87,30 @@ export default function Page() {
   const [bulkError, setBulkError] = useState("");
   const [bulkLoading, setBulkLoading] = useState(false);
   const [copiedBulkIndex, setCopiedBulkIndex] = useState<number | null>(null);
+  const [bulkCacheHits, setBulkCacheHits] = useState(0);
 
   const handleGenerate = async () => {
     setLoading(true);
     setError("");
     setResult("");
     setCopied(false);
+    setUsedSingleCache(false);
 
     try {
+      const cache = loadCache();
+      const cacheKey = makeSingleCacheKey(
+        subject,
+        unit,
+        understanding,
+        attitude
+      );
+
+      if (cache[cacheKey]) {
+        setResult(cache[cacheKey]);
+        setUsedSingleCache(true);
+        return;
+      }
+
       const res = await fetch("/api/comment", {
         method: "POST",
         headers: {
@@ -59,7 +130,12 @@ export default function Page() {
         throw new Error(data.error || "コメント生成に失敗した");
       }
 
-      setResult(data.comment || "");
+      const comment = data.comment || "";
+      setResult(comment);
+
+      const nextCache = loadCache();
+      nextCache[cacheKey] = comment;
+      saveCache(nextCache);
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message);
@@ -143,16 +219,47 @@ export default function Page() {
     setBulkError("");
     setBulkResults([]);
     setCopiedBulkIndex(null);
+    setBulkCacheHits(0);
 
     try {
       const students = parseBulkText(bulkText);
+      const cache = loadCache();
+
+      const cachedResults: BulkResult[] = [];
+      const uncachedStudents: StudentRow[] = [];
+
+      for (const student of students) {
+        const key = makeBulkCacheKey(student);
+        const cachedComment = cache[key];
+
+        if (cachedComment) {
+          cachedResults.push({
+            name: student.name,
+            comment: cachedComment,
+          });
+        } else {
+          uncachedStudents.push(student);
+        }
+      }
+
+      setBulkCacheHits(cachedResults.length);
+
+      if (uncachedStudents.length === 0) {
+        const orderedResults = students.map((student) => ({
+          name: student.name,
+          comment: cache[makeBulkCacheKey(student)],
+        }));
+
+        setBulkResults(orderedResults);
+        return;
+      }
 
       const res = await fetch("/api/bulk", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ students }),
+        body: JSON.stringify({ students: uncachedStudents }),
       });
 
       const data = await res.json();
@@ -161,7 +268,28 @@ export default function Page() {
         throw new Error(data.error || "一括生成に失敗した");
       }
 
-      setBulkResults(data.results || []);
+      const apiResults = (data.results || []) as BulkResult[];
+
+      const nextCache = loadCache();
+
+      for (let i = 0; i < uncachedStudents.length; i++) {
+        const student = uncachedStudents[i];
+        const apiResult = apiResults[i];
+
+        if (apiResult?.comment) {
+          nextCache[makeBulkCacheKey(student)] = apiResult.comment;
+        }
+      }
+
+      saveCache(nextCache);
+
+      const finalCache = loadCache();
+      const orderedResults = students.map((student) => ({
+        name: student.name,
+        comment: finalCache[makeBulkCacheKey(student)] || "",
+      }));
+
+      setBulkResults(orderedResults);
     } catch (err) {
       if (err instanceof Error) {
         setBulkError(err.message);
@@ -173,6 +301,15 @@ export default function Page() {
     }
   };
 
+  const handleClearCache = () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(CACHE_KEY);
+    }
+    setUsedSingleCache(false);
+    setBulkCacheHits(0);
+    alert("キャッシュを削除した");
+  };
+
   return (
     <main style={styles.page}>
       <div style={styles.container}>
@@ -181,6 +318,12 @@ export default function Page() {
           <p style={styles.subtitle}>
             手入力でも、CSVテキスト貼り付けでも、コミルに貼れるコメントを生成する
           </p>
+        </div>
+
+        <div style={styles.topActionRow}>
+          <button style={styles.clearCacheButton} onClick={handleClearCache}>
+            キャッシュ削除
+          </button>
         </div>
 
         <div style={styles.card}>
@@ -244,6 +387,9 @@ export default function Page() {
           </button>
 
           {loading && <p style={styles.loadingText}>AIがコメントを作成中...</p>}
+          {usedSingleCache && (
+            <p style={styles.cacheText}>保存済みキャッシュから表示した</p>
+          )}
           {error && <div style={styles.errorBox}>{error}</div>}
 
           <div style={styles.resultCard}>
@@ -306,7 +452,11 @@ export default function Page() {
           {bulkLoading && (
             <p style={styles.loadingText}>CSVテキストからまとめて生成中...</p>
           )}
-
+          {bulkCacheHits > 0 && (
+            <p style={styles.cacheText}>
+              {bulkCacheHits}件はキャッシュから再利用した
+            </p>
+          )}
           {bulkError && <div style={styles.errorBox}>{bulkError}</div>}
 
           {bulkResults.length > 0 && (
@@ -364,6 +514,21 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginBottom: 0,
     color: "#5f6b85",
     fontSize: "15px",
+  },
+  topActionRow: {
+    display: "flex",
+    justifyContent: "flex-end",
+    marginBottom: "16px",
+  },
+  clearCacheButton: {
+    height: "40px",
+    padding: "0 14px",
+    borderRadius: "10px",
+    border: "1px solid #f59e0b",
+    backgroundColor: "#fff7ed",
+    color: "#b45309",
+    fontWeight: 700,
+    cursor: "pointer",
   },
   sectionTitle: {
     marginTop: 0,
@@ -456,6 +621,12 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginTop: "12px",
     color: "#4b5b7a",
     fontSize: "14px",
+  },
+  cacheText: {
+    marginTop: "12px",
+    color: "#047857",
+    fontSize: "14px",
+    fontWeight: 700,
   },
   errorBox: {
     marginTop: "16px",
