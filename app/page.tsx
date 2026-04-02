@@ -238,6 +238,7 @@ export default function Page() {
             <option value="normal">ふつう</option>
             <option value="praise">ほめ強め</option>
             <option value="gentle">やさしめ</option>
+            <option value="spalta">スパルタ</option>
           </select>
         </div>
 
