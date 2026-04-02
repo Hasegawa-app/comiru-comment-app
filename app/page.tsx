@@ -232,6 +232,7 @@ export default function Page() {
             <div style={styles.fieldFull}>
               <label style={styles.label}>授業の様子・補足</label>
               <textarea
+                className="text-black"
                 style={styles.textarea}
                 value={attitude}
                 onChange={(e) => setAttitude(e.target.value)}
@@ -277,7 +278,7 @@ export default function Page() {
               <p style={styles.resultText}>{result}</p>
             ) : (
               <p style={styles.placeholderText}>
-                ここに生成されたコメントが表示される
+                  ここに生成されたコメントが表示される
               </p>
             )}
           </div>
@@ -430,42 +431,45 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: 700,
     color: "#33415c",
   },
-  input: {
-    height: "44px",
-    borderRadius: "12px",
-    border: "1px solid #cfd7e6",
-    padding: "0 14px",
-    fontSize: "15px",
-    outline: "none",
-    backgroundColor: "#fbfcff",
-    boxSizing: "border-box",
-  },
-  textarea: {
-    minHeight: "120px",
-    borderRadius: "12px",
-    border: "1px solid #cfd7e6",
-    padding: "14px",
-    fontSize: "15px",
-    outline: "none",
-    resize: "vertical",
-    backgroundColor: "#fbfcff",
-    boxSizing: "border-box",
-    fontFamily: "inherit",
-  },
-  bulkTextarea: {
-    width: "100%",
-    minHeight: "180px",
-    borderRadius: "12px",
-    border: "1px solid #cfd7e6",
-    padding: "14px",
-    fontSize: "15px",
-    outline: "none",
-    resize: "vertical",
-    backgroundColor: "#fbfcff",
-    boxSizing: "border-box",
-    fontFamily: "monospace",
-    lineHeight: 1.7,
-  },
+ input: {
+  height: "44px",
+  borderRadius: "12px",
+  border: "1px solid #cfd7e6",
+  padding: "0 14px",
+  fontSize: "15px",
+  outline: "none",
+  backgroundColor: "#fbfcff",
+  boxSizing: "border-box",
+  color: "#111",
+},
+textarea: {
+  minHeight: "120px",
+  borderRadius: "12px",
+  border: "1px solid #cfd7e6",
+  padding: "14px",
+  fontSize: "15px",
+  outline: "none",
+  resize: "vertical",
+  backgroundColor: "#fbfcff",
+  boxSizing: "border-box",
+  fontFamily: "inherit",
+  color: "#111",
+},
+bulkTextarea: {
+  width: "100%",
+  minHeight: "180px",
+  borderRadius: "12px",
+  border: "1px solid #cfd7e6",
+  padding: "14px",
+  fontSize: "15px",
+  outline: "none",
+  resize: "vertical",
+  backgroundColor: "#fbfcff",
+  boxSizing: "border-box",
+  fontFamily: "monospace",
+  lineHeight: 1.7,
+  color: "#111",
+},
   button: {
     marginTop: "20px",
     width: "100%",
