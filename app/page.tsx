@@ -1,598 +1,492 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 
-type BulkResult = {
-  name: string;
+type ToneType = "polite" | "normal" | "praise" | "gentle";
+
+type SingleResult = {
   comment: string;
 };
 
-type StudentRow = {
+type CsvResult = {
   name: string;
   subject: string;
   unit: string;
-  understanding: string;
-  attitude: string;
+  comment: string;
 };
-
-type CommentCache = Record<string, string>;
 
 export default function Page() {
+  const [mode, setMode] = useState<"single" | "csv">("single");
+
+  // 手入力
+  const [name, setName] = useState("");
   const [subject, setSubject] = useState("");
   const [unit, setUnit] = useState("");
-  const [understanding, setUnderstanding] = useState("普通");
+  const [understanding, setUnderstanding] = useState("");
   const [attitude, setAttitude] = useState("");
-  const [result, setResult] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [usedSingleCache, setUsedSingleCache] = useState(false);
+  const [tone, setTone] = useState<ToneType>("normal");
+  const [singleResult, setSingleResult] = useState("");
 
-  const [bulkText, setBulkText] = useState(
+  // CSV
+  const [csvText, setCsvText] = useState(
     "name,subject,unit,understanding,attitude\n山田太郎,英語,関係代名詞,やや苦戦,集中して取り組んでいた"
   );
-  const [bulkResults, setBulkResults] = useState<BulkResult[]>([]);
-  const [bulkError, setBulkError] = useState("");
-  const [bulkLoading, setBulkLoading] = useState(false);
-  const [copiedBulkIndex, setCopiedBulkIndex] = useState<number | null>(null);
-  const [bulkCacheHits, setBulkCacheHits] = useState(0);
+  const [csvResults, setCsvResults] = useState<CsvResult[]>([]);
 
- const handleGenerate = async () => {
-  setLoading(true);
-  setError("");
-  setResult("");
-  setCopied(false);
+  // 共通
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  try {
-    const res = await fetch("/api/comment", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        subject,
-        unit,
-        understanding,
-        attitude,
-      }),
-    });
+  async function handleGenerateSingle() {
+    setError("");
+    setSingleResult("");
 
-    const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data.error || "コメント生成に失敗した");
+    if (!subject || !unit || !understanding || !attitude) {
+      setError("科目・単元・理解度・授業の様子を入力してな。");
+      return;
     }
 
-    setResult(data.comment || "");
-  } catch (err) {
-    if (err instanceof Error) {
-      setError(err.message);
-    } else {
-      setError("不明なエラーが起きた");
-    }
-  } finally {
-    setLoading(false);
-  }
-};
+    setLoading(true);
 
-  const handleCopy = async () => {
-    if (!result) return;
-    await navigator.clipboard.writeText(result);
-    setCopied(true);
+    try {
+      const res = await fetch("/api/generate-comment", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          mode: "single",
+          tone,
+          data: {
+            name,
+            subject,
+            unit,
+            understanding,
+            attitude,
+          },
+        }),
+      });
 
-    setTimeout(() => {
-      setCopied(false);
-    }, 1500);
-  };
+      const data: SingleResult & { error?: string } = await res.json();
 
-  const handleBulkCopy = async (text: string, index: number) => {
-    await navigator.clipboard.writeText(text);
-    setCopiedBulkIndex(index);
-
-    setTimeout(() => {
-      setCopiedBulkIndex(null);
-    }, 1500);
-  };
-
-  const parseBulkText = (text: string): StudentRow[] => {
-    const lines = text
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line !== "");
-
-    if (lines.length < 2) {
-      throw new Error("CSVテキストにデータが入ってない");
-    }
-
-    const header = lines[0].split(",").map((item) => item.trim());
-    const expectedHeader = [
-      "name",
-      "subject",
-      "unit",
-      "understanding",
-      "attitude",
-    ];
-
-    const isValidHeader =
-      header.length === expectedHeader.length &&
-      header.every((item, index) => item === expectedHeader[index]);
-
-    if (!isValidHeader) {
-      throw new Error(
-        "1行目は name,subject,unit,understanding,attitude にして"
-      );
-    }
-
-    return lines.slice(1).map((line, index) => {
-      const cols = line.split(",").map((item) => item.trim());
-
-      if (cols.length < 5) {
-        throw new Error(`${index + 2}行目の列数が足りない`);
+      if (!res.ok) {
+        throw new Error(data.error || "コメント生成に失敗した。");
       }
 
-      const [name, subject, unit, understanding, attitude] = cols;
-
-      return {
-        name,
-        subject,
-        unit,
-        understanding,
-        attitude,
-      };
-    });
-  };
-
- const handleBulkGenerate = async () => {
-  setBulkLoading(true);
-  setBulkError("");
-  setBulkResults([]);
-  setCopiedBulkIndex(null);
-
-  try {
-    const students = parseBulkText(bulkText);
-
-    const res = await fetch("/api/bulk", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ students }),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data.error || "一括生成に失敗した");
+      setSingleResult(data.comment);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "エラーが発生した。");
+    } finally {
+      setLoading(false);
     }
-
-    setBulkResults(data.results || []);
-  } catch (err) {
-    if (err instanceof Error) {
-      setBulkError(err.message);
-    } else {
-      setBulkError("一括処理で不明なエラーが起きた");
-    }
-  } finally {
-    setBulkLoading(false);
   }
-};
 
+  async function handleGenerateCsv() {
+    setError("");
+    setCsvResults([]);
+
+    if (!csvText.trim()) {
+      setError("CSVテキストを入力してな。");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/generate-comment", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          mode: "csv",
+          tone,
+          csvText,
+        }),
+      });
+
+      const data: { results?: CsvResult[]; error?: string } = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "CSVコメント生成に失敗した。");
+      }
+
+      setCsvResults(data.results || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "エラーが発生した。");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function copyToClipboard(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      alert("コピーしたで。");
+    } catch {
+      alert("コピーに失敗した。");
+    }
+  }
 
   return (
-    <main style={styles.page}>
-      <div style={styles.container}>
-        <div style={styles.headerBox}>
-          <h1 style={styles.title}>コミルコメント生成</h1>
-          <p style={styles.subtitle}>
-            手入力でも、CSVテキスト貼り付けでも、コミルに貼れるコメントを生成する
-          </p>
+    <main
+      style={{
+        minHeight: "100vh",
+        background: "#f5f7fb",
+        padding: "32px 16px",
+        color: "#111",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: "900px",
+          margin: "0 auto",
+          background: "#fff",
+          borderRadius: "16px",
+          padding: "24px",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
+        }}
+      >
+        <h1
+          style={{
+            fontSize: "28px",
+            fontWeight: 700,
+            marginBottom: "8px",
+            color: "#111",
+          }}
+        >
+          コミルコメント生成アプリ
+        </h1>
+
+        <p style={{ marginBottom: "20px", color: "#444" }}>
+          手入力でもCSV一括でもコメントを生成できる版や。
+        </p>
+
+        <div
+          style={{
+            display: "flex",
+            gap: "8px",
+            marginBottom: "20px",
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            onClick={() => setMode("single")}
+            style={{
+              padding: "10px 16px",
+              borderRadius: "10px",
+              border: mode === "single" ? "2px solid #2563eb" : "1px solid #ccc",
+              background: mode === "single" ? "#dbeafe" : "#fff",
+              cursor: "pointer",
+              color: "#111",
+              fontWeight: 600,
+            }}
+          >
+            手入力モード
+          </button>
+
+          <button
+            onClick={() => setMode("csv")}
+            style={{
+              padding: "10px 16px",
+              borderRadius: "10px",
+              border: mode === "csv" ? "2px solid #2563eb" : "1px solid #ccc",
+              background: mode === "csv" ? "#dbeafe" : "#fff",
+              cursor: "pointer",
+              color: "#111",
+              fontWeight: 600,
+            }}
+          >
+            CSV一括モード
+          </button>
         </div>
 
-        <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>1人分を手入力で生成</h2>
+        <div
+          style={{
+            marginBottom: "24px",
+            padding: "16px",
+            border: "1px solid #ddd",
+            borderRadius: "12px",
+            background: "#fafafa",
+          }}
+        >
+          <label
+            style={{
+              display: "block",
+              fontWeight: 700,
+              marginBottom: "8px",
+              color: "#111",
+            }}
+          >
+            コメントの雰囲気
+          </label>
 
-          <div style={styles.formGrid}>
-            <div style={styles.field}>
-              <label style={styles.label}>科目</label>
-              <input
-                className="text-black"
-                style={styles.input}
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                placeholder="例：英語"
-              />
-            </div>
+          <select
+            value={tone}
+            onChange={(e) => setTone(e.target.value as ToneType)}
+            style={{
+              width: "100%",
+              maxWidth: "320px",
+              padding: "10px 12px",
+              borderRadius: "8px",
+              border: "1px solid #ccc",
+              color: "#111",
+              background: "#fff",
+            }}
+          >
+            <option value="polite">ていねい</option>
+            <option value="normal">ふつう</option>
+            <option value="praise">ほめ強め</option>
+            <option value="gentle">やさしめ</option>
+          </select>
+        </div>
 
-            <div style={styles.field}>
-              <label style={styles.label}>単元</label>
-              <input
-                className="text-black"
-                style={styles.input}
-                value={unit}
-                onChange={(e) => setUnit(e.target.value)}
-                placeholder="例：関係代名詞"
-              />
-            </div>
-
-            <div style={styles.field}>
-              <label style={styles.label}>理解度</label>
-              <select
-                className="text-black"
-                style={styles.input}
+        {mode === "single" && (
+          <section>
+            <div
+              style={{
+                display: "grid",
+                gap: "14px",
+                marginBottom: "20px",
+              }}
+            >
+              <InputField label="生徒名（任意）" value={name} onChange={setName} />
+              <InputField label="科目" value={subject} onChange={setSubject} />
+              <InputField label="単元" value={unit} onChange={setUnit} />
+              <InputField
+                label="理解度"
                 value={understanding}
-                onChange={(e) => setUnderstanding(e.target.value)}
-              >
-                <option value="よくできた">よくできた</option>
-                <option value="普通">普通</option>
-                <option value="やや苦戦">やや苦戦</option>
-                <option value="苦戦">苦戦</option>
-              </select>
-            </div>
-
-            <div style={styles.fieldFull}>
-              <label style={styles.label}>授業の様子・補足</label>
-              <textarea
-                className="text-black"
-                style={styles.textarea}
+                onChange={setUnderstanding}
+              />
+              <InputField
+                label="授業の様子"
                 value={attitude}
-                onChange={(e) => setAttitude(e.target.value)}
-                placeholder="例：集中して取り組めていた。計算ミスが少し見られた。"
+                onChange={setAttitude}
               />
             </div>
-          </div>
 
-          <button
-            style={{
-              ...styles.button,
-              ...(loading || !subject || !unit ? styles.buttonDisabled : {}),
-            }}
-            onClick={handleGenerate}
-            disabled={loading || !subject || !unit}
-          >
-            {loading ? "生成中..." : "コメントを生成"}
-          </button>
+            <button
+              onClick={handleGenerateSingle}
+              disabled={loading}
+              style={{
+                padding: "12px 18px",
+                borderRadius: "10px",
+                border: "none",
+                background: loading ? "#93c5fd" : "#2563eb",
+                color: "#fff",
+                fontWeight: 700,
+                cursor: loading ? "not-allowed" : "pointer",
+                marginBottom: "20px",
+              }}
+            >
+              {loading ? "生成中..." : "コメントを生成"}
+            </button>
 
-          {loading && <p style={styles.loadingText}>AIがコメントを作成中...</p>}
-          {usedSingleCache && (
-            <p style={styles.cacheText}>保存済みキャッシュから表示した</p>
-          )}
-          {error && <div style={styles.errorBox}>{error}</div>}
-
-          <div style={styles.resultCard}>
-            <div style={styles.resultHeader}>
-              <h3 style={styles.resultTitle}>生成結果</h3>
-              <button
+            {singleResult && (
+              <div
                 style={{
-                  ...styles.copyButton,
-                  ...(!result ? styles.copyButtonDisabled : {}),
-                  ...(copied ? styles.copiedButton : {}),
+                  border: "1px solid #ddd",
+                  borderRadius: "12px",
+                  padding: "16px",
+                  background: "#f9fafb",
                 }}
-                onClick={handleCopy}
-                disabled={!result}
               >
-                {copied ? "コピー済み" : "コピー"}
-              </button>
-            </div>
-
-            {result ? (
-              <p style={styles.resultText}>{result}</p>
-            ) : (
-              <p style={styles.placeholderText}>
-                  ここに生成されたコメントが表示される
-              </p>
+                <h2
+                  style={{
+                    marginBottom: "10px",
+                    fontSize: "18px",
+                    fontWeight: 700,
+                    color: "#111",
+                  }}
+                >
+                  生成結果
+                </h2>
+                <p
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    lineHeight: 1.8,
+                    color: "#111",
+                    marginBottom: "12px",
+                  }}
+                >
+                  {singleResult}
+                </p>
+                <button
+                  onClick={() => copyToClipboard(singleResult)}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: "8px",
+                    border: "1px solid #ccc",
+                    background: "#fff",
+                    color: "#111",
+                    cursor: "pointer",
+                  }}
+                >
+                  コピー
+                </button>
+              </div>
             )}
-          </div>
-        </div>
+          </section>
+        )}
 
-        <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>CSVテキストを貼り付けて一括生成</h2>
+        {mode === "csv" && (
+          <section>
+            <label
+              style={{
+                display: "block",
+                fontWeight: 700,
+                marginBottom: "8px",
+                color: "#111",
+              }}
+            >
+              CSV形式テキスト
+            </label>
 
-          <p style={styles.helpText}>
-            1行目は
-            <code style={styles.code}>
-              name,subject,unit,understanding,attitude
-            </code>
-            にする
-          </p>
+            <textarea
+              value={csvText}
+              onChange={(e) => setCsvText(e.target.value)}
+              rows={10}
+              className="text-black"
+              style={{
+                width: "100%",
+                padding: "12px",
+                borderRadius: "12px",
+                border: "1px solid #ccc",
+                marginBottom: "16px",
+                color: "#111",
+                background: "#fff",
+                resize: "vertical",
+              }}
+            />
 
-          <textarea
-            className="text-black"
-            style={styles.bulkTextarea}
-            value={bulkText}
-            onChange={(e) => setBulkText(e.target.value)}
-            placeholder={
-              "name,subject,unit,understanding,attitude\n山田太郎,英語,関係代名詞,やや苦戦,集中して取り組んでいた"
-            }
-          />
+            <button
+              onClick={handleGenerateCsv}
+              disabled={loading}
+              style={{
+                padding: "12px 18px",
+                borderRadius: "10px",
+                border: "none",
+                background: loading ? "#93c5fd" : "#2563eb",
+                color: "#fff",
+                fontWeight: 700,
+                cursor: loading ? "not-allowed" : "pointer",
+                marginBottom: "20px",
+              }}
+            >
+              {loading ? "生成中..." : "CSV一括でコメント生成"}
+            </button>
 
-          <button
-            style={{
-              ...styles.button,
-              ...(bulkLoading || !bulkText.trim() ? styles.buttonDisabled : {}),
-            }}
-            onClick={handleBulkGenerate}
-            disabled={bulkLoading || !bulkText.trim()}
-          >
-            {bulkLoading ? "一括生成中..." : "一括でコメント生成"}
-          </button>
-
-          {bulkLoading && (
-            <p style={styles.loadingText}>CSVテキストからまとめて生成中...</p>
-          )}
-          {bulkCacheHits > 0 && (
-            <p style={styles.cacheText}>
-              {bulkCacheHits}件はキャッシュから再利用した
-            </p>
-          )}
-          {bulkError && <div style={styles.errorBox}>{bulkError}</div>}
-
-          {bulkResults.length > 0 && (
-            <div style={styles.bulkList}>
-              {bulkResults.map((item, index) => (
-                <div key={index} style={styles.bulkCard}>
-                  <div style={styles.bulkHeader}>
-                    <h3 style={styles.bulkName}>{item.name}</h3>
-                    <button
+            {csvResults.length > 0 && (
+              <div style={{ display: "grid", gap: "14px" }}>
+                {csvResults.map((item, index) => (
+                  <div
+                    key={`${item.name}-${index}`}
+                    style={{
+                      border: "1px solid #ddd",
+                      borderRadius: "12px",
+                      padding: "16px",
+                      background: "#f9fafb",
+                    }}
+                  >
+                    <h3
                       style={{
-                        ...styles.copyButton,
-                        ...(copiedBulkIndex === index
-                          ? styles.copiedButton
-                          : {}),
+                        marginBottom: "8px",
+                        fontSize: "17px",
+                        fontWeight: 700,
+                        color: "#111",
                       }}
-                      onClick={() => handleBulkCopy(item.comment, index)}
                     >
-                      {copiedBulkIndex === index ? "コピー済み" : "コピー"}
+                      {item.name || `生徒${index + 1}`}
+                    </h3>
+
+                    <p style={{ marginBottom: "4px", color: "#444" }}>
+                      <strong>科目:</strong> {item.subject}
+                    </p>
+                    <p style={{ marginBottom: "10px", color: "#444" }}>
+                      <strong>単元:</strong> {item.unit}
+                    </p>
+
+                    <p
+                      style={{
+                        whiteSpace: "pre-wrap",
+                        lineHeight: 1.8,
+                        color: "#111",
+                        marginBottom: "12px",
+                      }}
+                    >
+                      {item.comment}
+                    </p>
+
+                    <button
+                      onClick={() => copyToClipboard(item.comment)}
+                      style={{
+                        padding: "10px 14px",
+                        borderRadius: "8px",
+                        border: "1px solid #ccc",
+                        background: "#fff",
+                        color: "#111",
+                        cursor: "pointer",
+                      }}
+                    >
+                      コピー
                     </button>
                   </div>
-                  <p style={styles.resultText}>{item.comment}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {error && (
+          <p
+            style={{
+              marginTop: "18px",
+              color: "#dc2626",
+              fontWeight: 700,
+            }}
+          >
+            {error}
+          </p>
+        )}
       </div>
     </main>
   );
 }
 
-const styles: { [key: string]: React.CSSProperties } = {
-  page: {
-    minHeight: "100vh",
-    background:
-      "linear-gradient(180deg, rgb(244, 247, 255) 0%, rgb(250, 251, 255) 100%)",
-    padding: "32px 16px",
-    boxSizing: "border-box",
-  },
-  container: {
-    maxWidth: "960px",
-    margin: "0 auto",
-  },
-  headerBox: {
-    marginBottom: "20px",
-  },
-  title: {
-    fontSize: "32px",
-    fontWeight: 800,
-    margin: 0,
-    color: "#1f2a44",
-  },
-  subtitle: {
-    marginTop: "8px",
-    marginBottom: 0,
-    color: "#5f6b85",
-    fontSize: "15px",
-  },
-  topActionRow: {
-    display: "flex",
-    justifyContent: "flex-end",
-    marginBottom: "16px",
-  },
-  clearCacheButton: {
-    height: "40px",
-    padding: "0 14px",
-    borderRadius: "10px",
-    border: "1px solid #f59e0b",
-    backgroundColor: "#fff7ed",
-    color: "#b45309",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  sectionTitle: {
-    marginTop: 0,
-    marginBottom: "16px",
-    fontSize: "22px",
-    fontWeight: 800,
-    color: "#1f2a44",
-  },
-  card: {
-    backgroundColor: "#ffffff",
-    borderRadius: "18px",
-    padding: "24px",
-    boxShadow: "0 10px 30px rgba(31, 42, 68, 0.08)",
-    border: "1px solid #e7ebf3",
-    marginBottom: "20px",
-  },
-  formGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "16px",
-  },
-  field: {
-    display: "flex",
-    flexDirection: "column",
-  },
-  fieldFull: {
-    display: "flex",
-    flexDirection: "column",
-    gridColumn: "1 / -1",
-  },
-  label: {
-    marginBottom: "8px",
-    fontSize: "14px",
-    fontWeight: 700,
-    color: "#33415c",
-  },
- input: {
-  height: "44px",
-  borderRadius: "12px",
-  border: "1px solid #cfd7e6",
-  padding: "0 14px",
-  fontSize: "15px",
-  outline: "none",
-  backgroundColor: "#fbfcff",
-  boxSizing: "border-box",
-  color: "#111",
-},
-textarea: {
-  minHeight: "120px",
-  borderRadius: "12px",
-  border: "1px solid #cfd7e6",
-  padding: "14px",
-  fontSize: "15px",
-  outline: "none",
-  resize: "vertical",
-  backgroundColor: "#fbfcff",
-  boxSizing: "border-box",
-  fontFamily: "inherit",
-  color: "#111",
-},
-bulkTextarea: {
-  width: "100%",
-  minHeight: "180px",
-  borderRadius: "12px",
-  border: "1px solid #cfd7e6",
-  padding: "14px",
-  fontSize: "15px",
-  outline: "none",
-  resize: "vertical",
-  backgroundColor: "#fbfcff",
-  boxSizing: "border-box",
-  fontFamily: "monospace",
-  lineHeight: 1.7,
-  color: "#000",
-},
-  button: {
-    marginTop: "20px",
-    width: "100%",
-    height: "48px",
-    borderRadius: "12px",
-    border: "none",
-    backgroundColor: "#3b82f6",
-    color: "#fff",
-    fontSize: "16px",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  buttonDisabled: {
-    backgroundColor: "#9dbcf5",
-    cursor: "not-allowed",
-  },
-  loadingText: {
-    marginTop: "12px",
-    color: "#4b5b7a",
-    fontSize: "14px",
-  },
-  cacheText: {
-    marginTop: "12px",
-    color: "#047857",
-    fontSize: "14px",
-    fontWeight: 700,
-  },
-  errorBox: {
-    marginTop: "16px",
-    backgroundColor: "#fff1f2",
-    color: "#b42318",
-    border: "1px solid #fecdd3",
-    borderRadius: "12px",
-    padding: "12px 14px",
-    fontSize: "14px",
-  },
-  resultCard: {
-    marginTop: "20px",
-    backgroundColor: "#f8fbff",
-    borderRadius: "16px",
-    padding: "20px",
-    border: "1px solid #e2e8f0",
-  },
-  resultHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "12px",
-    marginBottom: "14px",
-  },
-  resultTitle: {
-    margin: 0,
-    fontSize: "20px",
-    fontWeight: 800,
-    color: "#1f2a44",
-  },
-  copyButton: {
-    height: "38px",
-    padding: "0 14px",
-    borderRadius: "10px",
-    border: "1px solid #cfd7e6",
-    backgroundColor: "#f8fafc",
-    color: "#33415c",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  copyButtonDisabled: {
-    opacity: 0.5,
-    cursor: "not-allowed",
-  },
-  copiedButton: {
-    backgroundColor: "#dbeafe",
-    border: "1px solid #93c5fd",
-    color: "#1d4ed8",
-  },
-  resultText: {
-    margin: 0,
-    whiteSpace: "pre-wrap",
-    lineHeight: 1.9,
-    fontSize: "15px",
-    color: "#24324a",
-  },
-  placeholderText: {
-    margin: 0,
-    color: "#8a94a6",
-    fontSize: "15px",
-  },
-  helpText: {
-    marginTop: 0,
-    color: "#5f6b85",
-    fontSize: "14px",
-  },
-  code: {
-    marginLeft: "6px",
-    marginRight: "6px",
-    padding: "2px 6px",
-    backgroundColor: "#eef2ff",
-    borderRadius: "6px",
-    fontSize: "13px",
-  },
-  bulkList: {
-    display: "grid",
-    gap: "16px",
-    marginTop: "16px",
-  },
-  bulkCard: {
-    backgroundColor: "#f8fbff",
-    borderRadius: "16px",
-    padding: "18px",
-    border: "1px solid #e2e8f0",
-  },
-  bulkHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "12px",
-    marginBottom: "10px",
-  },
-  bulkName: {
-    margin: 0,
-    fontSize: "18px",
-    fontWeight: 800,
-    color: "#1f2a44",
-  },
-};
+function InputField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label
+        style={{
+          display: "block",
+          fontWeight: 700,
+          marginBottom: "8px",
+          color: "#111",
+        }}
+      >
+        {label}
+      </label>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="text-black"
+        style={{
+          width: "100%",
+          padding: "10px 12px",
+          borderRadius: "10px",
+          border: "1px solid #ccc",
+          color: "#111",
+          background: "#fff",
+        }}
+      />
+    </div>
+  );
+}
