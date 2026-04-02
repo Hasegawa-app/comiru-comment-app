@@ -195,6 +195,7 @@ export default function Page() {
             <div style={styles.field}>
               <label style={styles.label}>科目</label>
               <input
+                className="text-black"
                 style={styles.input}
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
