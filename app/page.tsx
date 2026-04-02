@@ -206,6 +206,7 @@ export default function Page() {
             <div style={styles.field}>
               <label style={styles.label}>単元</label>
               <input
+                className="text-black"
                 style={styles.input}
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
@@ -216,6 +217,7 @@ export default function Page() {
             <div style={styles.field}>
               <label style={styles.label}>理解度</label>
               <select
+                className="text-black"
                 style={styles.input}
                 value={understanding}
                 onChange={(e) => setUnderstanding(e.target.value)}
