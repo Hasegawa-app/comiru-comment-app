@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 
-type ToneType = "polite" | "normal" | "praise" | "gentle";
+type ToneType = "polite" | "normal" | "praise" | "gentle" | "sparta";
 
 type SingleResult = {
   comment: string;
@@ -17,6 +17,7 @@ type CsvResult = {
 
 export default function Page() {
   const [mode, setMode] = useState<"single" | "csv">("single");
+  const [usage, setUsage] = useState<any>(null);
 
   // 手入力
   const [name, setName] = useState("");
@@ -67,13 +68,14 @@ export default function Page() {
         }),
       });
 
-      const data: SingleResult & { error?: string } = await res.json();
+      const data: SingleResult & { error?: string; usage?: any } = await res.json();
 
       if (!res.ok) {
         throw new Error(data.error || "コメント生成に失敗した。");
       }
 
       setSingleResult(data.comment);
+      setUsage(data.usage);
     } catch (err) {
       setError(err instanceof Error ? err.message : "エラーが発生した。");
     } finally {
@@ -238,7 +240,7 @@ export default function Page() {
             <option value="normal">ふつう</option>
             <option value="praise">ほめ強め</option>
             <option value="gentle">やさしめ</option>
-            <option value="spalta">スパルタ</option>
+            <option value="sparta">スパルタ</option>
           </select>
         </div>
 
@@ -301,6 +303,7 @@ export default function Page() {
                   }}
                 >
                   生成結果
+                  
                 </h2>
                 <p
                   style={{
@@ -312,19 +315,27 @@ export default function Page() {
                 >
                   {singleResult}
                 </p>
-                <button
-                  onClick={() => copyToClipboard(singleResult)}
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: "8px",
-                    border: "1px solid #ccc",
-                    background: "#fff",
-                    color: "#111",
-                    cursor: "pointer",
-                  }}
-                >
-                  コピー
-                </button>
+                {usage && (
+                  <div style={{ marginTop: "10px", color: "#555" }}>
+                    <p>入力トークン: {usage.inputTokens}</p>
+                    <p>出力トークン: {usage.outputTokens}</p>
+                    <p>コスト: ${usage.costUsd.toFixed(6)}</p>
+                    <p>（約 {Math.round(usage.costYen)} 円）</p>
+                    <button
+                      onClick={() => copyToClipboard(singleResult)}
+                      style={{
+                        padding: "10px 14px",
+                        borderRadius: "8px",
+                        border: "1px solid #ccc",
+                        background: "#fff",
+                        color: "#111",
+                        cursor: "pointer",
+                      }}
+                    >
+                      コピー
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </section>

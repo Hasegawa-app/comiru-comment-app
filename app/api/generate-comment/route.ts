@@ -5,233 +5,132 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-type ToneType = "polite" | "spalta" | "normal" | "praise" | "gentle";
+type ToneType = "polite" | "normal" | "praise" | "gentle" | "sparta";
+
+// 👇 単価（gpt-5-mini）
+const INPUT_PRICE = 0.25 / 1_000_000;
+const OUTPUT_PRICE = 2.0 / 1_000_000;
+
+// 👇 コスト計算
+function calculateCost(inputTokens: number, outputTokens: number) {
+  const usd =
+    inputTokens * INPUT_PRICE + outputTokens * OUTPUT_PRICE;
+
+  const yen = usd * 150; // 仮レート
+
+  return {
+    usd,
+    yen,
+  };
+}
 
 function getToneInstruction(tone: ToneType) {
   switch (tone) {
     case "polite":
-      return `
-文体は丁寧で落ち着いた雰囲気にする。
-保護者向けの面談記録・指導報告として自然な文章にする。
-過度にくだけすぎない。
-`;
-    case "spalta":
-      return `
-文体は丁寧で落ち着いた雰囲気にする。
-克服すべき課題を中心に生徒の背筋が伸びるような指導コメントにする。
-優しさは残すこと。
-`;
-
+      return "丁寧で落ち着いた文体";
     case "praise":
-      return `
-文体は明るめで、良い点をしっかり拾う。
-ただし褒めすぎて不自然にはしない。
-前向きな読後感にする。
-`;
-
+      return "褒めを強めに";
     case "gentle":
-      return `
-文体はやさしく、配慮のある表現にする。
-苦戦している内容があっても、きつく書かず、今後への期待が持てる表現にする。
-`;
-
-    case "normal":
+      return "やさしく配慮ある文体";
+    case "sparta":
+      return "厳しめで引き締まった文体";
     default:
-      return `
-文体は自然でバランスのよい指導コメントにする。
-褒める点と課題を不自然なく両立させる。
-`;
+      return "自然でバランス良く";
   }
 }
 
-function buildPromptForSingle(data: {
-  name?: string;
-  subject: string;
-  unit: string;
-  understanding: string;
-  attitude: string;
-  tone: ToneType;
-}) {
+function buildPrompt(data: any, tone: ToneType) {
   return `
-あなたは塾講師向けのコメント作成アシスタントです。
-以下の情報をもとに、Comiruなどで保護者に送るための授業コメントを日本語で1本作成してください。
+塾講師として保護者向けコメントを作成してください。
 
 条件:
-- 2〜4文程度
-- 自然で読みやすい日本語
-- 科目名と単元名を「今回は(科目名)の(単元名)の演習と解説を行いました」のフォーマットに入れる
-- 理解度と授業中の様子を反映する
+- 2〜4文
+- 自然な日本語
+- 科目・単元を入れる
 - 最後は前向きに締める
-- 名前は入れない
-- 不自然に大げさな表現は避ける
-- 箇条書き、体現止め、今後の授業の方針の提示を禁止
-- 引用符不要
-- コメントの最後は「これからも頑張っていきましょう！」でしめる
-文体条件:
-${getToneInstruction(data.tone)}
 
-入力情報:
-生徒名: ${data.name || ""}
+文体:
+${getToneInstruction(tone)}
+
+情報:
 科目: ${data.subject}
 単元: ${data.unit}
 理解度: ${data.understanding}
-授業の様子: ${data.attitude}
+授業態度: ${data.attitude}
 `;
-}
-
-function parseCsv(csvText: string) {
-  const lines = csvText
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (lines.length < 2) {
-    throw new Error("CSVはヘッダー行を含めて2行以上必要や。");
-  }
-
-  const header = lines[0].split(",").map((s) => s.trim());
-  const requiredHeaders = ["name", "subject", "unit", "understanding", "attitude"];
-
-  for (const h of requiredHeaders) {
-    if (!header.includes(h)) {
-      throw new Error(`CSVヘッダーに ${h} が必要や。`);
-    }
-  }
-
-  const headerIndex = Object.fromEntries(header.map((h, i) => [h, i]));
-
-  return lines.slice(1).map((line, idx) => {
-    const cols = line.split(",").map((s) => s.trim());
-
-    return {
-      rowNumber: idx + 2,
-      name: cols[headerIndex["name"]] || "",
-      subject: cols[headerIndex["subject"]] || "",
-      unit: cols[headerIndex["unit"]] || "",
-      understanding: cols[headerIndex["understanding"]] || "",
-      attitude: cols[headerIndex["attitude"]] || "",
-    };
-  });
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const mode = body.mode as "single" | "csv";
-
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json(
-        { error: "OPENAI_API_KEY が設定されていない。" },
-        { status: 500 }
-      );
-    }
+    const mode = body.mode;
+    const tone = body.tone || "normal";
 
     if (mode === "single") {
       const data = body.data;
-      const tone = (body.tone || "normal") as ToneType;
-
-      if (!data?.subject || !data?.unit || !data?.understanding || !data?.attitude) {
-        return NextResponse.json(
-          { error: "必要項目が足りていない。" },
-          { status: 400 }
-        );
-      }
-
-      const prompt = buildPromptForSingle({
-        name: data.name || "",
-        subject: data.subject,
-        unit: data.unit,
-        understanding: data.understanding,
-        attitude: data.attitude,
-        tone,
-      });
 
       const response = await client.responses.create({
         model: "gpt-5-mini",
-        input: prompt,
+        input: buildPrompt(data, tone),
       });
 
-      const comment = response.output_text?.trim();
+      const inputTokens = response.usage?.input_tokens ?? 0;
+      const outputTokens = response.usage?.output_tokens ?? 0;
 
-      if (!comment) {
-        throw new Error("コメント生成結果が空やった。");
-      }
+      const cost = calculateCost(inputTokens, outputTokens);
 
-      return NextResponse.json({ comment });
+      return NextResponse.json({
+        comment: response.output_text,
+        usage: {
+          inputTokens,
+          outputTokens,
+          costUsd: cost.usd,
+          costYen: cost.yen,
+        },
+      });
     }
 
     if (mode === "csv") {
-      const tone = (body.tone || "normal") as ToneType;
-      const csvText = body.csvText as string;
-
-      if (!csvText) {
-        return NextResponse.json(
-          { error: "CSVテキストが空や。" },
-          { status: 400 }
-        );
-      }
-
-      const rows = parseCsv(csvText);
+      const lines = body.csvText.split("\n").slice(1);
 
       const results = [];
 
-      for (const row of rows) {
-        if (!row.subject || !row.unit || !row.understanding || !row.attitude) {
-          results.push({
-            name: row.name,
-            subject: row.subject,
-            unit: row.unit,
-            comment: `【${row.rowNumber}行目】必要項目が不足しているため生成できませんでした。`,
-          });
-          continue;
-        }
+      for (const line of lines) {
+        if (!line.trim()) continue;
 
-        const prompt = buildPromptForSingle({
-          name: row.name,
-          subject: row.subject,
-          unit: row.unit,
-          understanding: row.understanding,
-          attitude: row.attitude,
-          tone,
+        const [name, subject, unit, understanding, attitude] =
+          line.split(",");
+
+        const response = await client.responses.create({
+          model: "gpt-5-mini",
+          input: buildPrompt(
+            { subject, unit, understanding, attitude },
+            tone
+          ),
         });
 
-        try {
-          const response = await client.responses.create({
-            model: "gpt-5-mini",
-            input: prompt,
-          });
+        const inputTokens = response.usage?.input_tokens ?? 0;
+        const outputTokens = response.usage?.output_tokens ?? 0;
 
-          const comment =
-            response.output_text?.trim() ||
-            `【${row.rowNumber}行目】コメント生成に失敗しました。`;
+        const cost = calculateCost(inputTokens, outputTokens);
 
-          results.push({
-            name: row.name,
-            subject: row.subject,
-            unit: row.unit,
-            comment,
-          });
-        } catch {
-          results.push({
-            name: row.name,
-            subject: row.subject,
-            unit: row.unit,
-            comment: `【${row.rowNumber}行目】APIエラーで生成できませんでした。`,
-          });
-        }
+        results.push({
+          name,
+          subject,
+          unit,
+          comment: response.output_text,
+          usage: {
+            costUsd: cost.usd,
+            costYen: cost.yen,
+          },
+        });
       }
 
       return NextResponse.json({ results });
     }
 
-    return NextResponse.json(
-      { error: "mode が不正や。" },
-      { status: 400 }
-    );
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "不明なエラーが発生した。";
-
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "mode不正" }, { status: 400 });
+  } catch (e) {
+    return NextResponse.json({ error: "エラー発生" }, { status: 500 });
   }
 }
