@@ -296,6 +296,7 @@ export default function Page() {
           </p>
 
           <textarea
+            className="text-black"
             style={styles.bulkTextarea}
             value={bulkText}
             onChange={(e) => setBulkText(e.target.value)}
@@ -468,7 +469,7 @@ bulkTextarea: {
   boxSizing: "border-box",
   fontFamily: "monospace",
   lineHeight: 1.7,
-  color: "#111",
+  color: "#000",
 },
   button: {
     marginTop: "20px",
