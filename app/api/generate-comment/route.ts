@@ -5,7 +5,7 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-type ToneType = "polite" | "normal" | "praise" | "gentle";
+type ToneType = "polite" | "spalta" | "normal" | "praise" | "gentle";
 
 function getToneInstruction(tone: ToneType) {
   switch (tone) {
@@ -14,6 +14,12 @@ function getToneInstruction(tone: ToneType) {
 文体は丁寧で落ち着いた雰囲気にする。
 保護者向けの面談記録・指導報告として自然な文章にする。
 過度にくだけすぎない。
+`;
+    case "spalta":
+      return `
+文体は丁寧で落ち着いた雰囲気にする。
+克服すべき課題を中心に生徒の背筋が伸びるような指導コメントにする。
+優しさは残すこと。
 `;
 
     case "praise":
