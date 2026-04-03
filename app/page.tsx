@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 type ToneType = "polite" | "normal" | "praise" | "gentle" | "sparta";
 
@@ -32,6 +32,22 @@ type CsvResponse = {
   error?: string;
 };
 
+type LogItem = {
+  id: string;
+  date: string;
+  mode: "single" | "csv";
+  name: string;
+  subject: string;
+  unit: string;
+  understanding: string;
+  attitude: string;
+  tone: string;
+  comment: string;
+  costJpy: number;
+};
+
+const LOG_STORAGE_KEY = "commentLogs";
+
 export default function Page() {
   const [mode, setMode] = useState<"single" | "csv">("single");
   const [usage, setUsage] = useState<UsageType | null>(null);
@@ -51,9 +67,56 @@ export default function Page() {
   );
   const [csvResults, setCsvResults] = useState<CsvResult[]>([]);
 
+  // ログ
+  const [logs, setLogs] = useState<LogItem[]>([]);
+
   // 共通
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LOG_STORAGE_KEY);
+      if (saved) {
+        setLogs(JSON.parse(saved));
+      }
+    } catch {
+      // 何もしない
+    }
+  }, []);
+
+  function persistLogs(nextLogs: LogItem[]) {
+    setLogs(nextLogs);
+    localStorage.setItem(LOG_STORAGE_KEY, JSON.stringify(nextLogs));
+  }
+
+  function prependLogs(items: LogItem[]) {
+    setLogs((prevLogs) => {
+      const nextLogs = [...items, ...prevLogs];
+      localStorage.setItem(LOG_STORAGE_KEY, JSON.stringify(nextLogs));
+      return nextLogs;
+    });
+  }
+
+  function deleteLog(id: string) {
+    setLogs((prevLogs) => {
+      const nextLogs = prevLogs.filter((log) => log.id !== id);
+      localStorage.setItem(LOG_STORAGE_KEY, JSON.stringify(nextLogs));
+      return nextLogs;
+    });
+  }
+
+  function clearLogs() {
+    persistLogs([]);
+  }
+
+  function getUsd(u?: UsageType | null) {
+    return u?.totalCostUsd ?? u?.costUsd ?? 0;
+  }
+
+  function getJpy(u?: UsageType | null) {
+    return u?.totalCostJpy ?? u?.costYen ?? 0;
+  }
 
   async function handleGenerateSingle() {
     setError("");
@@ -92,8 +155,28 @@ export default function Page() {
         throw new Error(data.error || "コメント生成に失敗した。");
       }
 
-      setSingleResult(data.comment || "");
-      setUsage(data.usage || null);
+      const comment = data.comment || "";
+      const responseUsage = data.usage || null;
+      const costJpy = getJpy(responseUsage);
+
+      setSingleResult(comment);
+      setUsage(responseUsage);
+
+      prependLogs([
+        {
+          id: crypto.randomUUID(),
+          date: new Date().toLocaleString(),
+          mode: "single",
+          name: name || "",
+          subject,
+          unit,
+          understanding,
+          attitude,
+          tone,
+          comment,
+          costJpy,
+        },
+      ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "エラーが発生した。");
     } finally {
@@ -131,7 +214,28 @@ export default function Page() {
         throw new Error(data.error || "CSVコメント生成に失敗した。");
       }
 
-      setCsvResults(data.results || []);
+      const results = data.results || [];
+      setCsvResults(results);
+
+      const now = new Date().toLocaleString();
+
+      const newLogs: LogItem[] = results.map((item, index) => ({
+        id: crypto.randomUUID(),
+        date: now,
+        mode: "csv",
+        name: item.name || `生徒${index + 1}`,
+        subject: item.subject || "",
+        unit: item.unit || "",
+        understanding: "",
+        attitude: "",
+        tone,
+        comment: item.comment || "",
+        costJpy: getJpy(item.usage),
+      }));
+
+      if (newLogs.length > 0) {
+        prependLogs(newLogs);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "エラーが発生した。");
     } finally {
@@ -146,14 +250,6 @@ export default function Page() {
     } catch {
       alert("コピーに失敗した。");
     }
-  }
-
-  function getUsd(u?: UsageType | null) {
-    return u?.totalCostUsd ?? u?.costUsd ?? 0;
-  }
-
-  function getJpy(u?: UsageType | null) {
-    return u?.totalCostJpy ?? u?.costYen ?? 0;
   }
 
   return (
@@ -483,6 +579,122 @@ export default function Page() {
             )}
           </section>
         )}
+
+        <section style={{ marginTop: "40px" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "12px",
+              marginBottom: "12px",
+              flexWrap: "wrap",
+            }}
+          >
+            <h2
+              style={{
+                fontSize: "20px",
+                fontWeight: 700,
+                color: "#111",
+                margin: 0,
+              }}
+            >
+              履歴
+            </h2>
+
+            {logs.length > 0 && (
+              <button
+                onClick={clearLogs}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #ccc",
+                  background: "#fff",
+                  color: "#111",
+                  cursor: "pointer",
+                }}
+              >
+                履歴を全削除
+              </button>
+            )}
+          </div>
+
+          {logs.length === 0 ? (
+            <p style={{ color: "#666" }}>履歴はまだありません。</p>
+          ) : (
+            <div style={{ display: "grid", gap: "10px" }}>
+              {logs.map((log) => (
+                <div
+                  key={log.id}
+                  style={{
+                    border: "1px solid #ddd",
+                    borderRadius: "10px",
+                    padding: "12px",
+                    background: "#fafafa",
+                  }}
+                >
+                  <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>
+                    {log.date} / {log.mode === "single" ? "手入力" : "CSV"}
+                  </div>
+
+                  <div style={{ fontWeight: 700, color: "#111", marginBottom: "6px" }}>
+                    {log.name || "（名前なし）"} ｜ {log.subject} / {log.unit}
+                  </div>
+
+                  <div style={{ fontSize: "13px", color: "#666", marginBottom: "6px" }}>
+                    理解度: {log.understanding || "—"} ／ 授業の様子: {log.attitude || "—"} ／
+                    トーン: {log.tone}
+                  </div>
+
+                  <p
+                    style={{
+                      margin: "6px 0 10px 0",
+                      whiteSpace: "pre-wrap",
+                      lineHeight: 1.7,
+                      color: "#111",
+                    }}
+                  >
+                    {log.comment}
+                  </p>
+
+                  <div style={{ fontSize: "12px", color: "#666", marginBottom: "8px" }}>
+                    約 {log.costJpy.toFixed(2)} 円
+                  </div>
+
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                    <button
+                      onClick={() => copyToClipboard(log.comment)}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: "6px",
+                        border: "1px solid #ccc",
+                        background: "#fff",
+                        color: "#111",
+                        cursor: "pointer",
+                      }}
+                    >
+                      コピー
+                    </button>
+
+                    <button
+                      onClick={() => deleteLog(log.id)}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: "6px",
+                        border: "1px solid #ccc",
+                        background: "#fff",
+                        color: "#111",
+                        cursor: "pointer",
+                      }}
+                    >
+                      削除
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
 
         {error && (
           <p
