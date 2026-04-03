@@ -55,7 +55,7 @@ function buildPrompt(data: any, tone: ToneType) {
 - ネガティブな表現を避ける
 - 理解度が「苦手」や「普通」の場合でも、前向きな表現を用いる
 - 次回授業ではこうする、といった表現は用いない
-
+- 文末は「これからも頑張っていきましょう！」で必ず締める
 文体:
 ${getToneInstruction(tone)}
 
