@@ -4,8 +4,19 @@ import React, { useState } from "react";
 
 type ToneType = "polite" | "normal" | "praise" | "gentle" | "sparta";
 
-type SingleResult = {
+type UsageType = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalCostUsd?: number;
+  totalCostJpy?: number;
+  costUsd?: number;
+  costYen?: number;
+};
+
+type SingleResultResponse = {
   comment: string;
+  usage?: UsageType;
+  error?: string;
 };
 
 type CsvResult = {
@@ -13,11 +24,17 @@ type CsvResult = {
   subject: string;
   unit: string;
   comment: string;
+  usage?: UsageType;
+};
+
+type CsvResponse = {
+  results?: CsvResult[];
+  error?: string;
 };
 
 export default function Page() {
   const [mode, setMode] = useState<"single" | "csv">("single");
-  const [usage, setUsage] = useState<any>(null);
+  const [usage, setUsage] = useState<UsageType | null>(null);
 
   // 手入力
   const [name, setName] = useState("");
@@ -41,6 +58,7 @@ export default function Page() {
   async function handleGenerateSingle() {
     setError("");
     setSingleResult("");
+    setUsage(null);
 
     if (!subject || !unit || !understanding || !attitude) {
       setError("科目・単元・理解度・授業の様子を入力してな。");
@@ -68,14 +86,14 @@ export default function Page() {
         }),
       });
 
-      const data: SingleResult & { error?: string; usage?: any } = await res.json();
+      const data: SingleResultResponse = await res.json();
 
       if (!res.ok) {
         throw new Error(data.error || "コメント生成に失敗した。");
       }
 
-      setSingleResult(data.comment);
-      setUsage(data.usage);
+      setSingleResult(data.comment || "");
+      setUsage(data.usage || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "エラーが発生した。");
     } finally {
@@ -107,7 +125,7 @@ export default function Page() {
         }),
       });
 
-      const data: { results?: CsvResult[]; error?: string } = await res.json();
+      const data: CsvResponse = await res.json();
 
       if (!res.ok) {
         throw new Error(data.error || "CSVコメント生成に失敗した。");
@@ -128,6 +146,14 @@ export default function Page() {
     } catch {
       alert("コピーに失敗した。");
     }
+  }
+
+  function getUsd(u?: UsageType | null) {
+    return u?.totalCostUsd ?? u?.costUsd ?? 0;
+  }
+
+  function getJpy(u?: UsageType | null) {
+    return u?.totalCostJpy ?? u?.costYen ?? 0;
   }
 
   return (
@@ -303,8 +329,8 @@ export default function Page() {
                   }}
                 >
                   生成結果
-                  
                 </h2>
+
                 <p
                   style={{
                     whiteSpace: "pre-wrap",
@@ -315,27 +341,29 @@ export default function Page() {
                 >
                   {singleResult}
                 </p>
+
                 {usage && (
-                  <div style={{ marginTop: "10px", color: "#555" }}>
-                    <p>入力トークン: {usage.inputTokens}</p>
-                    <p>出力トークン: {usage.outputTokens}</p>
-                    <p>コスト: ${usage.costUsd.toFixed(6)}</p>
-                    <p>（約 {Math.round(usage.costYen)} 円）</p>
-                    <button
-                      onClick={() => copyToClipboard(singleResult)}
-                      style={{
-                        padding: "10px 14px",
-                        borderRadius: "8px",
-                        border: "1px solid #ccc",
-                        background: "#fff",
-                        color: "#111",
-                        cursor: "pointer",
-                      }}
-                    >
-                      コピー
-                    </button>
+                  <div style={{ marginTop: "10px", color: "#555", marginBottom: "12px" }}>
+                    <p>入力トークン: {usage.inputTokens ?? 0}</p>
+                    <p>出力トークン: {usage.outputTokens ?? 0}</p>
+                    <p>コスト: ${getUsd(usage).toFixed(6)}</p>
+                    <p>（約 {getJpy(usage).toFixed(2)} 円）</p>
                   </div>
                 )}
+
+                <button
+                  onClick={() => copyToClipboard(singleResult)}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: "8px",
+                    border: "1px solid #ccc",
+                    background: "#fff",
+                    color: "#111",
+                    cursor: "pointer",
+                  }}
+                >
+                  コピー
+                </button>
               </div>
             )}
           </section>
@@ -428,6 +456,13 @@ export default function Page() {
                     >
                       {item.comment}
                     </p>
+
+                    {item.usage && (
+                      <div style={{ marginTop: "10px", color: "#555", marginBottom: "12px" }}>
+                        <p>コスト: ${getUsd(item.usage).toFixed(6)}</p>
+                        <p>（約 {getJpy(item.usage).toFixed(2)} 円）</p>
+                      </div>
+                    )}
 
                     <button
                       onClick={() => copyToClipboard(item.comment)}

@@ -49,7 +49,7 @@ export async function POST(req: Request) {
 `;
 
       const response = await client.responses.create({
-        model: "gpt-5",
+        model: "gpt-5-mini",
         input: prompt,
       });
 

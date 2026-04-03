@@ -28,9 +28,10 @@ export async function POST(req: Request) {
 - 褒めすぎない
 - 体言止めを絶対に用いない
 - 生徒名はコメント内に含めない
--ネガティブな表現を避ける
--理解度が「苦手」や「普通」の場合でも、前向きな表現を用いる
--次回授業ではこうする、といった表現は用いない
+- ネガティブな表現を避ける
+- 理解度が「苦手」や「普通」の場合でも、前向きな表現を用いる
+- 次回授業ではこうする、といった表現は用いない
+
 入力:
 科目名: ${subject}
 単元名: ${unit}
@@ -43,8 +44,27 @@ export async function POST(req: Request) {
       input: prompt,
     });
 
+    // 👇 usage取得
+    const usage = response.usage;
+
+    // 👇 トークン数
+    const inputTokens = usage?.input_tokens || 0;
+    const outputTokens = usage?.output_tokens || 0;
+
+    // 👇 料金計算（gpt-5-mini想定）
+    const inputCost = inputTokens * 0.00000025; // $0.25 / 1M
+    const outputCost = outputTokens * 0.000002; // $2.00 / 1M
+
+    const totalCost = inputCost + outputCost;
+
     return Response.json({
       comment: response.output_text,
+      usage: {
+        inputTokens,
+        outputTokens,
+        totalCost, // ドル
+        totalCostJPY: totalCost * 160, // 円（ざっくり）
+      },
     });
   } catch (error) {
     console.error("single comment error:", error);
